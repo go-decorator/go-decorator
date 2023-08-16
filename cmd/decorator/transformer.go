@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/dengsgo/go-decorator/cmd/logs"
+	"go/ast"
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -80,14 +82,46 @@ type importer struct {
 	cfg string
 
 	qMap map[string]bool
+
+	nameMap map[string]string
+	pathMap map[string]string
 }
 
-func newImporter(cfg string) *importer {
-	return &importer{
-		q:    map[string]string{},
-		cfg:  cfg,
-		qMap: map[string]bool{},
+func newImporter(cfg string, f *ast.File) *importer {
+	nameMap := map[string]string{}
+	pathMap := map[string]string{}
+	if f.Imports != nil && len(f.Imports) > 0 {
+		for _, ip := range f.Imports {
+			if ip == nil {
+				continue
+			}
+			name := ""
+			if ip.Name == nil || ip.Name.Name == "" || ip.Name.Name == "_" {
+				name = filepath.Base(ip.Path.Value)
+			} else {
+				name = ip.Name.Name
+			}
+			nameMap[name] = ip.Path.Value
+			pathMap[ip.Path.Value] = ip.Name.Name
+		}
 	}
+	return &importer{
+		q:       map[string]string{},
+		cfg:     cfg,
+		qMap:    map[string]bool{},
+		nameMap: nameMap,
+		pathMap: pathMap,
+	}
+}
+
+func (i *importer) importedName(name string) (pat string, ok bool) {
+	pat, ok = i.nameMap[name]
+	return
+}
+
+func (i *importer) importedPath(pkg string) (name string, ok bool) {
+	name, ok = i.pathMap[name]
+	return
 }
 
 func (i *importer) addImport(pkg string) (err error) {

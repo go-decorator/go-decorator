@@ -44,7 +44,6 @@ func compile(args []string) error {
 	logs.Debug("packageName", packageName, files, cfg, args)
 
 	var originPath string
-	imp := newImporter(cfg)
 
 	for _, file := range files {
 		fset := token.NewFileSet()
@@ -54,6 +53,7 @@ func compile(args []string) error {
 			continue
 		}
 		logs.Debug(f.Decls)
+		imp := newImporter(cfg, f)
 
 		// decorators imports
 		decorImports := []*ast.ImportSpec{}
@@ -117,6 +117,24 @@ func compile(args []string) error {
 					//x.Body.Rbrace = x.Body.Lbrace + token.Pos(ofs)
 					//log.Printf("fd.Body.Pos() %+v\n", fd.Body.Pos())
 					updated = true
+					if _, ok := imp.importedPath(decoratorPackagePath); !ok {
+						logs.Error("decorator used but packages not import", "\n",
+							fset.Position(doc.Pos()))
+					}
+					if x := decorX(decorName); x != "" {
+						if xPath, ok := imp.importedName(x); ok {
+							name, _ := imp.importedPath(xPath)
+							if name == "_" {
+								astutil.DeleteNamedImport(fset, f, "_", xPath)
+								astutil.AddImport(fset, f, xPath)
+								imp.pathMap[xPath] = x
+							}
+						} else {
+							logs.Error(decoratorScanFlag, decorName, "packages not import", "\n",
+								fset.Position(doc.Pos()))
+						}
+					}
+
 				}
 			},
 			func(gd *ast.GenDecl) {
@@ -149,24 +167,24 @@ func compile(args []string) error {
 			continue
 		}
 
-		decorImports = append(decorImports, &ast.ImportSpec{
-			Path: &ast.BasicLit{Value: decoratorPackagePath},
-		})
-		for _, v := range decorImports {
-			if v.Name == nil {
-				astutil.AddImport(fset, f, v.Path.Value)
-			} else {
-				astutil.AddNamedImport(fset, f, v.Name.Name, v.Path.Value)
-			}
-			err := imp.addImport(v.Path.Value)
-			if err != nil {
-				logs.Error("imp.addImport(v.Path.Value) error", v.Path.Value, err)
-			}
-		}
-
-		if err := imp.sync(); err != nil {
-			logs.Error("imp.sync()", err)
-		}
+		//decorImports = append(decorImports, &ast.ImportSpec{
+		//	Path: &ast.BasicLit{Value: decoratorPackagePath},
+		//})
+		//for _, v := range decorImports {
+		//	if v.Name == nil {
+		//		astutil.AddImport(fset, f, v.Path.Value)
+		//	} else {
+		//		astutil.AddNamedImport(fset, f, v.Name.Name, v.Path.Value)
+		//	}
+		//	err := imp.addImport(v.Path.Value)
+		//	if err != nil {
+		//		logs.Error("imp.addImport(v.Path.Value) error", v.Path.Value, err)
+		//	}
+		//}
+		//
+		//if err := imp.sync(); err != nil {
+		//	logs.Error("imp.sync()", err)
+		//}
 
 		var output []byte
 		buffer := bytes.NewBuffer(output)
@@ -193,6 +211,14 @@ func compile(args []string) error {
 	}
 
 	return nil
+}
+
+func decorX(decorName string) string {
+	arr := strings.Split(decorName, ".")
+	if len(arr) != 2 {
+		return ""
+	}
+	return arr[0]
 }
 
 func visitAstDecl(f *ast.File, funVisitor func(*ast.FuncDecl), genVisitor func(*ast.GenDecl)) {

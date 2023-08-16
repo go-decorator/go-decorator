@@ -5,6 +5,7 @@ package main
 //
 //go:decor github.com/dengsgo/go-decorator/example/packages/fun
 import (
+	_ "github.com/dengsgo/go-decorator/example/packages/fun"
 	"log"
 )
 
